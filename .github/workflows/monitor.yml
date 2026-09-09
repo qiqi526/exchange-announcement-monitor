@@ -1,0 +1,76 @@
+name: Exchange announcement monitor
+
+on:
+  schedule:
+    # 北京时间每小时的 07、17、27、37、47、57 分检查，避开 GitHub 整点拥堵。
+    - cron: "7,17,27,37,47,57 * * * *"
+    # 北京时间工作日 17:35 发送日报（UTC 09:35）。
+    - cron: "35 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "运行模式"
+        required: true
+        default: "test_email"
+        type: choice
+        options:
+          - test_email
+          - initialize
+          - monitor
+          - daily
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exchange-monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Select mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "35 9 * * 1-5" ]; then
+            echo "value=daily" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=monitor" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run monitor
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python monitor.py --mode "${{ steps.mode.outputs.value }}"
+
+      - name: Save announcement history
+        if: always()
+        shell: bash
+        run: |
+          if git diff --quiet -- state.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git commit -m "Update announcement history"
+          git push
