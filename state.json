@@ -2,13 +2,13 @@
   "seen": {},
   "last_success": {},
   "failures": {
-    "GFEX-PZ": 3,
-    "GFEX-TZ": 3,
-    "SHFE": 3,
-    "INE": 3,
-    "CZCE": 3,
-    "DCE": 3,
-    "CFFEX-TZ": 3,
-    "CFFEX-GG": 3
+    "GFEX-PZ": 4,
+    "GFEX-TZ": 4,
+    "SHFE": 4,
+    "INE": 4,
+    "CZCE": 4,
+    "DCE": 4,
+    "CFFEX-TZ": 4,
+    "CFFEX-GG": 4
   }
 }
