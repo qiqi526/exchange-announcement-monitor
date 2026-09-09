@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import html
 import json
@@ -112,9 +113,9 @@ def looks_like_notice(title: str, href: str) -> bool:
 def fetch(site: Site) -> list[Notice]:
     headers = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9"}
     last_error: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(2):
         try:
-            response = requests.get(site.url, headers=headers, timeout=30)
+            response = requests.get(site.url, headers=headers, timeout=12)
             response.raise_for_status()
             response.encoding = response.apparent_encoding or response.encoding
             soup = BeautifulSoup(response.text, "html.parser")
@@ -136,8 +137,8 @@ def fetch(site: Site) -> list[Notice]:
             return list(notices.values())[:80]
         except Exception as exc:
             last_error = exc
-            if attempt < 2:
-                time.sleep(5 * (attempt + 1))
+            if attempt < 1:
+                time.sleep(2)
     raise RuntimeError(str(last_error))
 
 
@@ -205,9 +206,16 @@ def collect(state: dict) -> tuple[list[Notice], list[Notice], dict[str, str]]:
     new_items: list[Notice] = []
     errors: dict[str, str] = {}
     timestamp = now_cn()
-    for site in SITES:
-        try:
-            items = fetch(site)
+    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+        futures = {pool.submit(fetch, site): site for site in SITES}
+        for future in as_completed(futures):
+            site = futures[future]
+            try:
+                items = future.result()
+            except Exception as exc:
+                errors[site.code] = str(exc)
+                state["failures"][site.code] = int(state["failures"].get(site.code, 0)) + 1
+                continue
             all_items.extend(items)
             state["last_success"][site.code] = timestamp.isoformat(timespec="seconds")
             state["failures"][site.code] = 0
@@ -222,9 +230,6 @@ def collect(state: dict) -> tuple[list[Notice], list[Notice], dict[str, str]]:
                         "first_seen": timestamp.isoformat(timespec="seconds"),
                         "first_seen_ts": timestamp.timestamp(),
                     }
-        except Exception as exc:
-            errors[site.code] = str(exc)
-            state["failures"][site.code] = int(state["failures"].get(site.code, 0)) + 1
     return all_items, new_items, errors
 
 
@@ -315,4 +320,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
